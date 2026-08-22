@@ -36,9 +36,9 @@ npm run build:pages
 **Repository variables**
 
 - `MINI_APP_URL` — адрес GitHub Pages с завершающим `/`
-- `WORKER_API_URL` — адрес Worker без завершающего `/`
+- `WORKER_API_URL` — адрес Worker без завершающего `/`; его можно добавить после первого деплоя для сборки Pages
 
-После этого вручную запустите workflow `Deploy Telegram bot backend`, затем повторно `Deploy Mini App to GitHub Pages`. Workflow сам установит webhook, кнопку меню и команды бота.
+После добавления секретов вручную запустите workflow `Deploy Telegram bot backend`. Он сам определит адрес Worker и установит webhook, кнопку меню и команды бота. Затем сохраните выданный адрес как `WORKER_API_URL` и повторно запустите `Deploy Mini App to GitHub Pages`.
 
 ## Безопасность
 
