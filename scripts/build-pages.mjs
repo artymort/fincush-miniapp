@@ -22,9 +22,10 @@ for (const file of files) {
 }
 
 const sourceHtml = await readFile(resolve(root, "index.html"), "utf8");
+const escapedApiUrl = apiUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 const builtHtml = sourceHtml.replace(
-  'globalThis.FINCUSH_CONFIG = Object.freeze({ API_URL: "" });',
-  `globalThis.FINCUSH_CONFIG = Object.freeze({ API_URL: ${JSON.stringify(apiUrl)} });`,
+  '<meta name="fincush-api-url" content="" />',
+  `<meta name="fincush-api-url" content="${escapedApiUrl}" />`,
 );
 await writeFile(resolve(output, "index.html"), builtHtml, "utf8");
 

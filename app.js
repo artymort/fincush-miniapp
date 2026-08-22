@@ -1,6 +1,10 @@
 const STORAGE_KEY = "fincush-prototype-v3";
 const DEFAULT_DAILY_TARGET = 250;
-const API_URL = String(globalThis.FINCUSH_CONFIG?.API_URL || "").replace(/\/$/, "");
+const API_URL = String(
+  globalThis.FINCUSH_CONFIG?.API_URL ||
+    document.querySelector('meta[name="fincush-api-url"]')?.content ||
+    "",
+).replace(/\/$/, "");
 
 const INITIAL_STATE = {
   startingBalance: 495.28,
