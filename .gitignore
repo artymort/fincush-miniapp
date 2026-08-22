@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-worker/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+
+# Local design sources and licensed font installers are not published.
+SF-Pro.dmg
+SFProText-*.ttf
+Manrope-*.ttf
+Manrope-OFL.txt
+assets/mascot-concepts/
+
