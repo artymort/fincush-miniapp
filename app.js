@@ -57,6 +57,7 @@ function loadState() {
 let state = loadState();
 let selectedAmount = Number(state.dailyTarget || DEFAULT_DAILY_TARGET);
 let backendMode = false;
+let pendingDeposit = null;
 
 function telegramWebApp() {
   return globalThis.Telegram?.WebApp || null;
@@ -76,6 +77,7 @@ function applyServerState(nextState) {
       : cloneInitialState().transactions,
   };
   selectedAmount = Number(state.dailyTarget || DEFAULT_DAILY_TARGET);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 async function apiRequest(path, options = {}) {
@@ -97,14 +99,52 @@ async function apiRequest(path, options = {}) {
 
 async function loadRemoteState() {
   if (!API_URL || !telegramInitData()) return false;
+  const localState = state;
   const result = await apiRequest("/api/state");
-  applyServerState(result.state);
+  let remoteState = result.state;
+
+  const remoteDeposits = () => remoteState.transactions.filter((item) => item.type === "deposit");
+  const legacyDeposits = localState.transactions.filter((item) => {
+    if (item.type !== "deposit") return false;
+    const occurredAt = new Date(item.date);
+    if (!Number.isFinite(occurredAt.getTime())) return false;
+    if (dateKey(occurredAt) < remoteState.startDate) return false;
+    return !remoteDeposits().some((remote) => {
+      if (remote.id === item.id) return true;
+      const sameAmount = Math.abs(Number(remote.amount) - Number(item.amount)) < 0.001;
+      const timeDistance = Math.abs(new Date(remote.date) - occurredAt);
+      return sameAmount && timeDistance < 5 * 60 * 1000;
+    });
+  });
+
+  for (const transaction of legacyDeposits) {
+    const safeId = /^[a-zA-Z0-9_-]{8,100}$/.test(String(transaction.id || ""))
+      ? String(transaction.id)
+      : `legacy-${new Date(transaction.date).getTime()}-${Math.round(Number(transaction.amount) * 100)}`;
+    const synced = await apiRequest("/api/deposits", {
+      method: "POST",
+      body: JSON.stringify({
+        amount: Number(transaction.amount),
+        clientId: safeId,
+        occurredAt: transaction.date,
+      }),
+    });
+    remoteState = synced.state;
+  }
+
+  applyServerState(remoteState);
   backendMode = true;
   return true;
 }
 
 function saveState() {
   if (!backendMode) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function requireConnectedBackend() {
+  if (telegramInitData() && !backendMode) {
+    throw new Error("Нет связи с сервером. Закройте Mini App и откройте её снова из сообщения бота");
+  }
 }
 
 function formatMoney(amount, digits = 2) {
@@ -373,6 +413,12 @@ function transactionMarkup(transaction) {
     interest: { icon: "%", title: transaction.title || "Проценты банка", className: "interest" },
   }[transaction.type] || { icon: "·", title: transaction.title || "Операция", className: "initial" };
 
+  const deleteButton = transaction.type === "deposit"
+    ? `<button class="transaction-delete" type="button" data-delete-transaction="${transaction.id}" aria-label="Удалить пополнение">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5"/></svg>
+      </button>`
+    : "";
+
   return `
     <article class="transaction-item">
       <div class="transaction-icon ${meta.className}">${meta.icon}</div>
@@ -380,7 +426,10 @@ function transactionMarkup(transaction) {
         <strong>${meta.title}</strong>
         <span>${dateLabel(transaction.date)}</span>
       </div>
-      <div class="transaction-amount">+${formatCompactMoney(transaction.amount)}</div>
+      <div class="transaction-actions">
+        <div class="transaction-amount">+${formatCompactMoney(transaction.amount)}</div>
+        ${deleteButton}
+      </div>
     </article>`;
 }
 
@@ -525,6 +574,7 @@ async function saveGoalChanges() {
   }
 
   try {
+    requireConnectedBackend();
     if (backendMode) {
       const result = await apiRequest("/api/goal", {
         method: "POST",
@@ -564,12 +614,22 @@ async function confirmTopup() {
   }
 
   try {
+    requireConnectedBackend();
     if (backendMode) {
+      const now = new Date();
+      if (!pendingDeposit || pendingDeposit.amount !== amount) {
+        pendingDeposit = {
+          amount,
+          clientId: globalThis.crypto?.randomUUID?.() || `deposit-${Date.now()}`,
+          occurredAt: now.toISOString(),
+        };
+      }
       const result = await apiRequest("/api/deposits", {
         method: "POST",
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify(pendingDeposit),
       });
       applyServerState(result.state);
+      pendingDeposit = null;
     } else {
       const now = new Date();
       const today = dateKey(now);
@@ -603,6 +663,67 @@ async function confirmTopup() {
     telegramWebApp()?.HapticFeedback?.notificationOccurred("success");
   } catch (error) {
     showToast(error.message || "Не удалось сохранить пополнение", "Ошибка");
+  }
+}
+
+function removeLocalDeposit(transactionId) {
+  const transaction = state.transactions.find(
+    (item) => item.id === transactionId && item.type === "deposit",
+  );
+  if (!transaction) return false;
+
+  const day = dateKey(transaction.date);
+  const before = amountDepositedOn(day);
+  const after = Math.max(0, before - Number(transaction.amount || 0));
+  const target = dailyTarget();
+  const extraBefore = Math.max(0, before - target);
+  const extraAfter = Math.max(0, after - target);
+  state.transactions = state.transactions.filter((item) => item.id !== transactionId);
+  state.habit.reserveRubles = Math.max(
+    0,
+    Number(state.habit.reserveRubles || 0) - (extraBefore - extraAfter),
+  );
+  if (before >= target && after < target) {
+    state.habit.rating = Math.max(0, Number(state.habit.rating || 0) - 2);
+  }
+  state.habit.lastChange = 0;
+  saveState();
+  return true;
+}
+
+function confirmAction(message) {
+  const webApp = telegramWebApp();
+  if (webApp?.showConfirm) {
+    return new Promise((resolve) => webApp.showConfirm(message, resolve));
+  }
+  return Promise.resolve(globalThis.confirm(message));
+}
+
+async function deleteTransaction(transactionId) {
+  const transaction = state.transactions.find(
+    (item) => item.id === transactionId && item.type === "deposit",
+  );
+  if (!transaction) return;
+  const confirmed = await confirmAction(
+    `Удалить пополнение ${formatCompactMoney(transaction.amount)}? Баланс и начисленный рейтинг будут пересчитаны.`,
+  );
+  if (!confirmed) return;
+
+  try {
+    requireConnectedBackend();
+    if (backendMode) {
+      const result = await apiRequest(`/api/deposits/${encodeURIComponent(transactionId)}`, {
+        method: "DELETE",
+      });
+      applyServerState(result.state);
+    } else {
+      removeLocalDeposit(transactionId);
+    }
+    render();
+    showToast(`${formatCompactMoney(transaction.amount)} удалены из накоплений`, "Операция отменена");
+    telegramWebApp()?.HapticFeedback?.notificationOccurred("warning");
+  } catch (error) {
+    showToast(error.message || "Не удалось удалить операцию", "Ошибка");
   }
 }
 
@@ -663,6 +784,11 @@ function bindEvents() {
   $("#goalDeadlineInput")?.addEventListener("input", updateGoalPreview);
   $("#saveGoal")?.addEventListener("click", saveGoalChanges);
 
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-delete-transaction]");
+    if (button) deleteTransaction(button.dataset.deleteTransaction);
+  });
+
   $$("[data-quick-amount]").forEach((button) => {
     button.addEventListener("click", () => openSheet(Number(button.dataset.quickAmount)));
   });
@@ -690,6 +816,7 @@ function bindEvents() {
     const previous = state.eveningReminder;
     const enabled = event.target.checked;
     try {
+      requireConnectedBackend();
       if (backendMode) {
         const result = await apiRequest("/api/settings", {
           method: "POST",
@@ -711,6 +838,7 @@ function bindEvents() {
   $("#resetDemo")?.addEventListener("click", async () => {
     if (!confirm("Сбросить все тестовые пополнения и вернуть стартовый баланс?")) return;
     try {
+      requireConnectedBackend();
       if (backendMode) {
         const result = await apiRequest("/api/reset", { method: "POST", body: "{}" });
         applyServerState(result.state);
@@ -732,6 +860,17 @@ function bindEvents() {
       closeGoalEditor();
     }
   });
+}
+
+function handleLaunchAction() {
+  const params = new URLSearchParams(location.search);
+  if (params.get("action") !== "deposit") return;
+  const requestedAmount = Number(params.get("amount"));
+  openSheet(requestedAmount > 0 ? requestedAmount : dailyTarget());
+  params.delete("action");
+  params.delete("amount");
+  const query = params.toString();
+  history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
 }
 
 function initTelegram() {
@@ -759,5 +898,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
   render();
+  handleLaunchAction();
   initSplash();
 });

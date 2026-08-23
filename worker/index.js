@@ -55,6 +55,67 @@ function amountOn(state, day) {
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 }
 
+function addDeposit(state, { amount, id = crypto.randomUUID(), date = new Date().toISOString() }) {
+  state.transactions ||= [];
+  state.habit ||= { rating: 50, reserveRubles: 0, missedStreak: 0, lastChange: 0 };
+
+  const existing = state.transactions.find((item) => item.id === id);
+  if (existing) return { state, transaction: existing, created: false };
+
+  const day = dateKey(new Date(date));
+  const before = amountOn(state, day);
+  const after = before + amount;
+  const target = Math.max(50, Number(state.dailyTarget || 250));
+  const extraBefore = Math.max(0, before - target);
+  const extraAfter = Math.max(0, after - target);
+  const transaction = {
+    id,
+    type: "deposit",
+    amount: Math.round(amount * 100) / 100,
+    date,
+    title: "Пополнение накопительного счета",
+  };
+
+  state.transactions.push(transaction);
+  state.habit.reserveRubles = Number(state.habit.reserveRubles || 0) + extraAfter - extraBefore;
+
+  if (before < target && after >= target) {
+    state.habit.rating = Math.min(100, Number(state.habit.rating || 0) + 2);
+    state.habit.lastChange = 2;
+    state.habit.missedStreak = 0;
+  }
+
+  return { state, transaction, created: true };
+}
+
+function removeDeposit(state, transactionId) {
+  state.transactions ||= [];
+  state.habit ||= { rating: 50, reserveRubles: 0, missedStreak: 0, lastChange: 0 };
+  const index = state.transactions.findIndex(
+    (item) => item.id === transactionId && item.type === "deposit",
+  );
+  if (index < 0) return null;
+
+  const transaction = state.transactions[index];
+  const day = dateKey(new Date(transaction.date));
+  const before = amountOn(state, day);
+  const after = Math.max(0, before - Number(transaction.amount || 0));
+  const target = Math.max(50, Number(state.dailyTarget || 250));
+  const extraBefore = Math.max(0, before - target);
+  const extraAfter = Math.max(0, after - target);
+
+  state.transactions.splice(index, 1);
+  state.habit.reserveRubles = Math.max(
+    0,
+    Number(state.habit.reserveRubles || 0) - (extraBefore - extraAfter),
+  );
+  if (before >= target && after < target) {
+    state.habit.rating = Math.max(0, Number(state.habit.rating || 0) - 2);
+  }
+  state.habit.lastChange = 0;
+  return transaction;
+}
+
 function daysUntil(deadline, today = dateKey()) {
   const start = new Date(`${today}T12:00:00+05:00`);
   const end = new Date(`${deadline}T12:00:00+05:00`);
@@ -138,31 +199,34 @@ export class FincushState {
         return json({ error: "Некорректная сумма" }, 400);
       }
 
-      const now = new Date();
-      const today = dateKey(now);
-      const before = amountOn(state, today);
-      const after = before + amount;
-      const target = Math.max(50, Number(state.dailyTarget || 250));
-      const extraBefore = Math.max(0, before - target);
-      const extraAfter = Math.max(0, after - target);
-
-      state.transactions.push({
-        id: crypto.randomUUID(),
-        type: "deposit",
-        amount: Math.round(amount * 100) / 100,
-        date: now.toISOString(),
-        title: "Пополнение накопительного счета",
-      });
-      state.habit.reserveRubles = Number(state.habit.reserveRubles || 0) + extraAfter - extraBefore;
-
-      if (before < target && after >= target) {
-        state.habit.rating = Math.min(100, Number(state.habit.rating || 0) + 2);
-        state.habit.lastChange = 2;
-        state.habit.missedStreak = 0;
+      const clientId = String(body.clientId || "").trim();
+      if (clientId && !/^[a-zA-Z0-9_-]{8,100}$/.test(clientId)) {
+        return json({ error: "Некорректный идентификатор операции" }, 400);
       }
+
+      const requestedDate = body.occurredAt ? new Date(body.occurredAt) : new Date();
+      const now = new Date();
+      const validDate = Number.isFinite(requestedDate.getTime()) &&
+        requestedDate.getTime() <= now.getTime() + 5 * 60 * 1000 &&
+        dateKey(requestedDate) >= state.startDate;
+      if (!validDate) return json({ error: "Некорректная дата операции" }, 400);
+
+      addDeposit(state, {
+        amount,
+        id: clientId || crypto.randomUUID(),
+        date: requestedDate.toISOString(),
+      });
 
       await this.save(state);
       return json({ state: publicState(state) });
+    }
+
+    if (request.method === "DELETE" && path.startsWith("/deposit/")) {
+      const transactionId = decodeURIComponent(path.slice("/deposit/".length));
+      const deleted = removeDeposit(state, transactionId);
+      if (!deleted) return json({ error: "Пополнение не найдено" }, 404);
+      await this.save(state);
+      return json({ state: publicState(state), deletedId: transactionId });
     }
 
     if (request.method === "POST" && path === "/goal") {
@@ -335,7 +399,7 @@ function allowedOrigin(request, env) {
 function corsHeaders(request, env) {
   return {
     "Access-Control-Allow-Origin": allowedOrigin(request, env),
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-Telegram-Init-Data",
     "Vary": "Origin",
   };
@@ -352,9 +416,17 @@ async function telegramApi(env, method, payload) {
   return result.result;
 }
 
-function openAppKeyboard(env) {
+function miniAppUrl(env, action = "", amount = 0) {
+  const url = new URL(env.MINI_APP_URL);
+  if (action) url.searchParams.set("action", action);
+  if (amount > 0) url.searchParams.set("amount", String(amount));
+  return url.toString();
+}
+
+function openAppKeyboard(env, options = {}) {
+  const { text = "Открыть Fincush", action = "", amount = 0 } = options;
   return {
-    inline_keyboard: [[{ text: "Открыть Fincush", web_app: { url: env.MINI_APP_URL } }]],
+    inline_keyboard: [[{ text, web_app: { url: miniAppUrl(env, action, amount) } }]],
   };
 }
 
@@ -415,7 +487,11 @@ async function sendScheduledReminder(env, cron, scheduledTime) {
   await telegramApi(env, "sendMessage", {
     chat_id: env.ALLOWED_TELEGRAM_ID,
     text: reminderText(result, cron === EVENING_CRON),
-    reply_markup: openAppKeyboard(env),
+    reply_markup: openAppKeyboard(env, {
+      text: cron === EVENING_CRON ? "Подтвердить перевод" : `Внести ${Number(result.state.dailyTarget).toLocaleString("ru-RU")} ₽`,
+      action: "deposit",
+      amount: Number(result.state.dailyTarget),
+    }),
   });
 }
 
@@ -431,13 +507,16 @@ async function handleApi(request, env) {
   }
 
   const url = new URL(request.url);
-  const route = {
+  let route = {
     "/api/state": "/state",
     "/api/deposits": "/deposit",
     "/api/goal": "/goal",
     "/api/settings": "/settings",
     "/api/reset": "/reset",
   }[url.pathname];
+  if (request.method === "DELETE" && url.pathname.startsWith("/api/deposits/")) {
+    route = `/deposit/${encodeURIComponent(decodeURIComponent(url.pathname.slice("/api/deposits/".length)))}`;
+  }
   if (!route) return json({ error: "Not found" }, 404, cors);
 
   const body = request.method === "GET" ? undefined : await request.text();
@@ -472,11 +551,12 @@ export default {
 };
 
 export const __test = {
+  addDeposit,
   amountOn,
   createInitialState,
   currentBalance,
   dateKey,
   shiftDate,
   suggestDailyTarget,
+  removeDeposit,
 };
-
