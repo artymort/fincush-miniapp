@@ -418,6 +418,7 @@ async function telegramApi(env, method, payload) {
 
 function miniAppUrl(env, action = "", amount = 0) {
   const url = new URL(env.MINI_APP_URL);
+  url.searchParams.set("v", "20260823-4");
   if (action) url.searchParams.set("action", action);
   if (amount > 0) url.searchParams.set("amount", String(amount));
   return url.toString();

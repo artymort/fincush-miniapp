@@ -893,9 +893,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadRemoteState();
   } catch (error) {
     console.error("Fincush backend:", error);
-    if (telegramInitData()) {
-      setTimeout(() => showToast(error.message || "Не удалось синхронизировать данные", "Нет синхронизации"), 250);
-    }
   }
   render();
   handleLaunchAction();

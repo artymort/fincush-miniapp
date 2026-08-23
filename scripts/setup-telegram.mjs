@@ -12,7 +12,9 @@ for (const name of required) {
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.ALLOWED_TELEGRAM_ID;
-const miniAppUrl = process.env.MINI_APP_URL.replace(/\/$/, "/");
+const miniAppUrlValue = new URL(process.env.MINI_APP_URL);
+miniAppUrlValue.searchParams.set("v", "20260823-4");
+const miniAppUrl = miniAppUrlValue.toString();
 const workerUrl = process.env.WORKER_API_URL.replace(/\/$/, "");
 const api = `https://api.telegram.org/bot${token}`;
 
@@ -60,4 +62,3 @@ await telegram("sendMessage", {
 });
 
 console.log("Telegram webhook and personal menu button configured.");
-
