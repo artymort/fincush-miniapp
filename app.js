@@ -894,7 +894,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (error) {
     console.error("Fincush backend:", error);
     if (telegramInitData()) {
-      setTimeout(() => showToast(error.message || "Не удалось проверить доступ", "Доступ закрыт"), 250);
+      setTimeout(() => showToast(error.message || "Не удалось синхронизировать данные", "Нет синхронизации"), 250);
     }
   }
   render();

@@ -1,7 +1,7 @@
 const TIME_ZONE = "Asia/Yekaterinburg";
 const MORNING_CRON = "0 6 * * *";
 const EVENING_CRON = "0 15 * * *";
-const MAX_INIT_DATA_AGE_SECONDS = 24 * 60 * 60;
+const MAX_INIT_DATA_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 function createInitialState() {
   return {
@@ -356,7 +356,7 @@ async function validateInitData(initData, env) {
   params.delete("signature");
 
   const dataCheckString = [...params.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
@@ -503,7 +503,12 @@ async function handleApi(request, env) {
     await validateInitData(request.headers.get("X-Telegram-Init-Data"), env);
   } catch (error) {
     const status = error.message === "forbidden_user" ? 403 : 401;
-    return json({ error: status === 403 ? "Доступ разрешён только владельцу" : "Откройте Mini App из Telegram" }, status, cors);
+    const message = status === 403
+      ? "Доступ разрешён только владельцу"
+      : error.message === "expired_init_data"
+        ? "Сессия Telegram устарела. Закройте Mini App и откройте её снова"
+        : "Не удалось проверить сессию Telegram";
+    return json({ error: message }, status, cors);
   }
 
   const url = new URL(request.url);
