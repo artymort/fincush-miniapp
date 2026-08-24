@@ -13,7 +13,7 @@ for (const name of required) {
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.ALLOWED_TELEGRAM_ID;
 const miniAppUrlValue = new URL(process.env.MINI_APP_URL);
-miniAppUrlValue.searchParams.set("v", "20260824-6");
+miniAppUrlValue.searchParams.set("v", "20260824-7");
 const miniAppUrl = miniAppUrlValue.toString();
 const workerUrl = process.env.WORKER_API_URL.replace(/\/$/, "");
 const api = `https://api.telegram.org/bot${token}`;

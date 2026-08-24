@@ -385,7 +385,7 @@ function renderWeek() {
   const monday = startOfWeek();
   const today = dateKey(new Date());
   const dayNames = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
-  let weekTotal = 0;
+  const todayCompleted = depositedDays.has(today);
 
   const markup = dayNames
     .map((name, index) => {
@@ -393,22 +393,26 @@ function renderWeek() {
       date.setDate(monday.getDate() + index);
       const key = dateKey(date);
       const hasDeposit = depositedDays.has(key);
-      const amount = deposits
-        .filter((transaction) => dateKey(transaction.date) === key)
-        .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
-      weekTotal += amount;
+      const isToday = key === today;
+      const isMissed = key >= state.startDate && key < today && !hasDeposit;
       const classes = ["day-cell"];
       if (hasDeposit) classes.push("is-done");
-      if (key === today) classes.push("is-today");
-      return `<div class="${classes.join(" ")}"><span>${name}</span><strong class="day-dot">${date.getDate()}</strong></div>`;
+      if (isToday) classes.push("is-today");
+      if (isMissed) classes.push("is-missed");
+      const badge = hasDeposit ? "<i>✓</i>" : isMissed ? "<i>×</i>" : "";
+      return `<div class="${classes.join(" ")}"><span>${name}</span><strong class="day-dot"><b>${date.getDate()}</b>${badge}</strong></div>`;
     })
     .join("");
 
   weekCards.forEach((weekCard) => {
     weekCard.innerHTML = markup;
   });
-  setText("#weekTotal", formatCompactMoney(weekTotal));
-  setText("#homeWeekTotal", formatCompactMoney(weekTotal));
+  [$("#homeTodayStatus"), $("#activityTodayStatus")].filter(Boolean).forEach((status) => {
+    status.classList.toggle("is-completed", todayCompleted);
+    status.querySelector("span").textContent = todayCompleted
+      ? "Сегодня пополнение подтверждено"
+      : "Сегодня пополнение ещё не подтверждено";
+  });
 }
 
 function transactionMarkup(transaction) {

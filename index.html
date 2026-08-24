@@ -7,7 +7,7 @@
     <meta name="description" content="Личный трекер накоплений Fincush" />
     <meta name="fincush-api-url" content="" />
     <title>Fincush — моя подушка</title>
-    <link rel="stylesheet" href="styles.css?v=bot-ui-6" />
+    <link rel="stylesheet" href="styles.css?v=bot-ui-7" />
     <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
   </head>
   <body>
@@ -59,8 +59,10 @@
           </section>
 
           <section class="content-section home-week-section">
-            <div class="section-title-row"><h2>Неделя</h2><span class="week-summary" id="homeWeekTotal">0 ₽</span></div>
+            <div class="section-title-row"><h2>Календарь пополнений</h2></div>
+            <div class="today-status" id="homeTodayStatus"><i></i><span>Сегодня пополнение ожидается</span></div>
             <div class="week-panel" id="homeWeekCard" aria-label="Активность за неделю"></div>
+            <div class="week-legend" aria-label="Обозначения календаря"><span><i class="legend-done">✓</i>Пополнено</span><span><i class="legend-today"></i>Сегодня</span><span><i class="legend-missed">×</i>Пропуск</span></div>
           </section>
         </section>
 
@@ -84,8 +86,10 @@
             </div>
           </section>
           <section class="content-section">
-            <div class="section-title-row"><h2>Неделя</h2><span class="week-summary" id="weekTotal">0 ₽</span></div>
+            <div class="section-title-row"><h2>Календарь пополнений</h2></div>
+            <div class="today-status" id="activityTodayStatus"><i></i><span>Сегодня пополнение ожидается</span></div>
             <div class="week-panel" id="weekCard" aria-label="Активность за неделю"></div>
+            <div class="week-legend" aria-label="Обозначения календаря"><span><i class="legend-done">✓</i>Пополнено</span><span><i class="legend-today"></i>Сегодня</span><span><i class="legend-missed">×</i>Пропуск</span></div>
             <p class="reserve-caption" id="reserveText">Резерва на пропуск пока нет</p>
           </section>
           <section class="rating-explainer">
@@ -150,6 +154,6 @@
         <div class="celebration" id="celebration" aria-hidden="true"></div>
       </main>
     </div>
-    <script src="app.js?v=bot-ui-6"></script>
+    <script src="app.js?v=bot-ui-7"></script>
   </body>
 </html>
