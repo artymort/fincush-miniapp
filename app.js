@@ -335,9 +335,7 @@ function renderRating() {
   if (rating >= 90) label = "Высокая дисциплина";
 
   setText("#ratingScore", rating);
-  setText("#homeRating", rating);
   setText("#reserveDays", reserveDays);
-  setText("#homeReserve", reserveDays);
   setText("#depositDays", days);
   setText("#ratingLabel", label);
   setText(
@@ -379,8 +377,8 @@ function startOfWeek(reference = new Date()) {
 }
 
 function renderWeek() {
-  const weekCard = $("#weekCard");
-  if (!weekCard) return;
+  const weekCards = [$("#weekCard"), $("#homeWeekCard")].filter(Boolean);
+  if (!weekCards.length) return;
 
   const deposits = state.transactions.filter((transaction) => transaction.type === "deposit");
   const depositedDays = new Set(deposits.map((transaction) => dateKey(transaction.date)));
@@ -389,7 +387,7 @@ function renderWeek() {
   const dayNames = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
   let weekTotal = 0;
 
-  weekCard.innerHTML = dayNames
+  const markup = dayNames
     .map((name, index) => {
       const date = new Date(monday);
       date.setDate(monday.getDate() + index);
@@ -402,11 +400,15 @@ function renderWeek() {
       const classes = ["day-cell"];
       if (hasDeposit) classes.push("is-done");
       if (key === today) classes.push("is-today");
-      return `<div class="${classes.join(" ")}"><span>${name}</span><strong>${date.getDate()}</strong></div>`;
+      return `<div class="${classes.join(" ")}"><span>${name}</span><strong class="day-dot">${date.getDate()}</strong></div>`;
     })
     .join("");
 
+  weekCards.forEach((weekCard) => {
+    weekCard.innerHTML = markup;
+  });
   setText("#weekTotal", formatCompactMoney(weekTotal));
+  setText("#homeWeekTotal", formatCompactMoney(weekTotal));
 }
 
 function transactionMarkup(transaction) {
