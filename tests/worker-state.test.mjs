@@ -73,3 +73,29 @@ test("deleting an accelerated deposit removes only its reserve contribution", ()
   assert.equal(state.habit.rating, 52);
   assert.equal(state.habit.reserveRubles, 0);
 });
+
+test("morning reminder is skipped after an early deposit", () => {
+  const state = __test.createInitialState();
+  assert.equal(__test.shouldSendMorning(state, "2026-08-24"), true);
+
+  __test.addDeposit(state, {
+    amount: 250,
+    id: "early-deposit-20260824",
+    date: "2026-08-24T03:15:00.000Z",
+  });
+  assert.equal(__test.shouldSendMorning(state, "2026-08-24"), false);
+});
+
+test("deposit confirmation includes amount and resulting balance", () => {
+  const state = __test.createInitialState();
+  const transaction = __test.addDeposit(state, {
+    amount: 250,
+    id: "notified-deposit-20260824",
+    date: "2026-08-24T06:00:00.000Z",
+  }).transaction;
+
+  assert.equal(
+    __test.depositConfirmationText(state, transaction),
+    "Пополнение подтверждено: <b>+250 ₽</b>\nБаланс подушки: <b>745,28 ₽</b>",
+  );
+});

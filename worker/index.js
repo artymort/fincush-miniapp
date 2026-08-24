@@ -116,6 +116,10 @@ function removeDeposit(state, transactionId) {
   return transaction;
 }
 
+function shouldSendMorning(state, today) {
+  return today >= state.startDate && amountOn(state, today) === 0;
+}
+
 function daysUntil(deadline, today = dateKey()) {
   const start = new Date(`${today}T12:00:00+05:00`);
   const end = new Date(`${deadline}T12:00:00+05:00`);
@@ -211,14 +215,18 @@ export class FincushState {
         dateKey(requestedDate) >= state.startDate;
       if (!validDate) return json({ error: "Некорректная дата операции" }, 400);
 
-      addDeposit(state, {
+      const added = addDeposit(state, {
         amount,
         id: clientId || crypto.randomUUID(),
         date: requestedDate.toISOString(),
       });
 
       await this.save(state);
-      return json({ state: publicState(state) });
+      return json({
+        state: publicState(state),
+        created: added.created,
+        transaction: added.transaction,
+      });
     }
 
     if (request.method === "DELETE" && path.startsWith("/deposit/")) {
@@ -299,7 +307,7 @@ export class FincushState {
       }
 
       return json({
-        shouldSend: today >= state.startDate,
+        shouldSend: shouldSendMorning(state, today),
         previousStatus,
         state: publicState(state),
       });
@@ -473,6 +481,17 @@ function reminderText(result, evening = false) {
   return `${prefix}Ежедневный шаг — ${target} ₽. Сейчас в подушке ${balance} ₽.`;
 }
 
+function depositConfirmationText(state, transaction) {
+  const amount = Number(transaction.amount).toLocaleString("ru-RU", {
+    maximumFractionDigits: 2,
+  });
+  const balance = currentBalance(state).toLocaleString("ru-RU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `Пополнение подтверждено: <b>+${amount} ₽</b>\nБаланс подушки: <b>${balance} ₽</b>`;
+}
+
 async function sendScheduledReminder(env, cron, scheduledTime) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.ALLOWED_TELEGRAM_ID) return;
   const today = dateKey(new Date(scheduledTime));
@@ -531,10 +550,27 @@ async function handleApi(request, env) {
     headers: { "Content-Type": "application/json" },
     body,
   });
-  return new Response(response.body, {
-    status: response.status,
-    headers: { ...Object.fromEntries(response.headers), ...cors },
-  });
+  const result = await response.json();
+
+  if (
+    response.ok &&
+    request.method === "POST" &&
+    route === "/deposit" &&
+    result.created &&
+    result.transaction
+  ) {
+    try {
+      await telegramApi(env, "sendMessage", {
+        chat_id: env.ALLOWED_TELEGRAM_ID,
+        text: depositConfirmationText(result.state, result.transaction),
+        parse_mode: "HTML",
+      });
+    } catch (error) {
+      console.error("Deposit notification failed", error);
+    }
+  }
+
+  return json(result, response.status, cors);
 }
 
 export default {
@@ -562,7 +598,9 @@ export const __test = {
   createInitialState,
   currentBalance,
   dateKey,
+  depositConfirmationText,
   shiftDate,
+  shouldSendMorning,
   suggestDailyTarget,
   removeDeposit,
 };
