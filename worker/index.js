@@ -356,12 +356,10 @@ function timingSafeEqual(left, right) {
   return difference === 0;
 }
 
-async function validateInitData(initData, env) {
-  if (!initData || !env.TELEGRAM_BOT_TOKEN) throw new Error("missing_init_data");
+async function calculateInitDataHash(initData, botToken) {
   const params = new URLSearchParams(initData);
   const receivedHash = params.get("hash") || "";
   params.delete("hash");
-  params.delete("signature");
 
   const dataCheckString = [...params.entries()]
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
@@ -370,14 +368,24 @@ async function validateInitData(initData, env) {
 
   const encoder = new TextEncoder();
   const firstKey = await importHmacKey(encoder.encode("WebAppData"));
-  const secret = await crypto.subtle.sign("HMAC", firstKey, encoder.encode(env.TELEGRAM_BOT_TOKEN));
+  const secret = await crypto.subtle.sign("HMAC", firstKey, encoder.encode(botToken));
   const validationKey = await importHmacKey(secret);
   const calculatedHash = bytesToHex(
     await crypto.subtle.sign("HMAC", validationKey, encoder.encode(dataCheckString)),
   );
+  return { calculatedHash, receivedHash };
+}
+
+async function validateInitData(initData, env) {
+  if (!initData || !env.TELEGRAM_BOT_TOKEN) throw new Error("missing_init_data");
+  const { calculatedHash, receivedHash } = await calculateInitDataHash(
+    initData,
+    env.TELEGRAM_BOT_TOKEN,
+  );
 
   if (!timingSafeEqual(calculatedHash, receivedHash.toLowerCase())) throw new Error("invalid_hash");
 
+  const params = new URLSearchParams(initData);
   const authDate = Number(params.get("auth_date"));
   const age = Math.floor(Date.now() / 1000) - authDate;
   if (!Number.isFinite(authDate) || age < -60 || age > MAX_INIT_DATA_AGE_SECONDS) {
@@ -426,7 +434,7 @@ async function telegramApi(env, method, payload) {
 
 function miniAppUrl(env, action = "", amount = 0) {
   const url = new URL(env.MINI_APP_URL);
-  url.searchParams.set("v", "20260823-4");
+  url.searchParams.set("v", "20260824-5");
   if (action) url.searchParams.set("action", action);
   if (amount > 0) url.searchParams.set("amount", String(amount));
   return url.toString();
@@ -595,6 +603,7 @@ export default {
 export const __test = {
   addDeposit,
   amountOn,
+  calculateInitDataHash,
   createInitialState,
   currentBalance,
   dateKey,

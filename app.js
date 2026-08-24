@@ -141,7 +141,10 @@ function saveState() {
   if (!backendMode) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function requireConnectedBackend() {
+async function requireConnectedBackend() {
+  if (telegramInitData() && !backendMode) {
+    await loadRemoteState();
+  }
   if (telegramInitData() && !backendMode) {
     throw new Error("Нет связи с сервером. Закройте Mini App и откройте её снова из сообщения бота");
   }
@@ -574,7 +577,7 @@ async function saveGoalChanges() {
   }
 
   try {
-    requireConnectedBackend();
+    await requireConnectedBackend();
     if (backendMode) {
       const result = await apiRequest("/api/goal", {
         method: "POST",
@@ -614,7 +617,7 @@ async function confirmTopup() {
   }
 
   try {
-    requireConnectedBackend();
+    await requireConnectedBackend();
     if (backendMode) {
       const now = new Date();
       if (!pendingDeposit || pendingDeposit.amount !== amount) {
@@ -710,7 +713,7 @@ async function deleteTransaction(transactionId) {
   if (!confirmed) return;
 
   try {
-    requireConnectedBackend();
+    await requireConnectedBackend();
     if (backendMode) {
       const result = await apiRequest(`/api/deposits/${encodeURIComponent(transactionId)}`, {
         method: "DELETE",
@@ -816,7 +819,7 @@ function bindEvents() {
     const previous = state.eveningReminder;
     const enabled = event.target.checked;
     try {
-      requireConnectedBackend();
+      await requireConnectedBackend();
       if (backendMode) {
         const result = await apiRequest("/api/settings", {
           method: "POST",
@@ -838,7 +841,7 @@ function bindEvents() {
   $("#resetDemo")?.addEventListener("click", async () => {
     if (!confirm("Сбросить все тестовые пополнения и вернуть стартовый баланс?")) return;
     try {
-      requireConnectedBackend();
+      await requireConnectedBackend();
       if (backendMode) {
         const result = await apiRequest("/api/reset", { method: "POST", body: "{}" });
         applyServerState(result.state);
